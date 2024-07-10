@@ -1,0 +1,2 @@
+# z
+zettelkasten knowledge directory
