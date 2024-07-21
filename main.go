@@ -61,34 +61,40 @@ func generateStyle() {
 `)
 }
 
-func (d Dir) walkDir(depth int) []string {
-	dirs, err := os.ReadDir(d.relPath)
-	check(err)
-	var lines []string
+func hasSubDirs(dirs []fs.DirEntry) bool {
+	truth := false
 	for _, dir := range dirs {
-		prefix := strings.Repeat("  ", depth)
-		if (dir.IsDir() == true) && (dir.Name()[0] != '.') {
-			lines = append(lines, fmt.Sprintf("      %s<ul><li><p id=\"%s\"><a href=\"#\">%s</a></p></li>", prefix, dir.Name(), dir.Name()))
-			depth++
-			d := Dir{dir: dir, relPath: fmt.Sprintf("%s/%s", d.relPath, dir.Name())}
-			d.walkDir(depth)
-		} else if dir.Name()[0] != '.' {
-			lines = append(lines, fmt.Sprintf("      %s<li><p id=\"%s\"><a href=\"#\">%s</a></p></li>", prefix, dir.Name(), dir.Name()))
+		if dir.IsDir() {
+			truth = true
 		}
-		lines = append(lines, fmt.Sprintf("      %s</ul>", prefix))
 	}
-	return lines
+	return truth
 }
 
-func walkDirs(dirs []fs.DirEntry) []string {
-	var lines []string
+func (d Dir) walkDir(depth int) {
+	dirs, err := os.ReadDir(d.relPath)
+	check(err)
+	if hasSubDirs(dirs) {
+		for _, dir := range dirs {
+			//prefix := strings.Repeat("  ", depth)
+			if (dir.IsDir()) && (dir.Name()[0] != '.') {
+				depth++
+				d := Dir{dir: dir, relPath: fmt.Sprintf("%s/%s", d.relPath, dir.Name())}
+				fmt.Println(d)
+			} else {
+				//line = fmt.Sprintf("      %s<li><p id=\"%s\"><a href=\"#\">%s</a></p></li>", prefix, dir.Name(), dir.Name())
+			}
+		}
+	}
+}
+
+func walkDirs(dirs []fs.DirEntry) {
 	for _, dir := range dirs {
 		if (dir.IsDir() == true) && (dir.Name()[0] != '.') {
 			d := Dir{dir: dir, relPath: fmt.Sprintf("%s/%s", pathBase, dir.Name())}
-			lines = append(lines, d.walkDir(0)...)
+			d.walkDir(0)
 		}
 	}
-	return lines
 }
 
 // generate index.html
