@@ -3,8 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"html/template"
-	"io/fs"
 	"log"
 	"os"
 	"os/exec"
@@ -16,16 +14,22 @@ var (
 	pathBase string
 )
 
-type Dirs []Dir
+type DirTree []*Dir
+type FileTree []*File
 
 type Dir struct {
-	Dirs  []Dir
-	Files []fs.DirEntry
-	Path  string
+	DirTree  DirTree
+	FileTree FileTree
+	Path     string
+}
+
+type File struct {
+	Name string
+	Path string
 }
 
 type QueryResults struct {
-	Dirs  Dirs
+	Dirs  DirTree
 	Paths []string
 }
 
@@ -51,7 +55,7 @@ func homeDir() string {
 	return homedir
 }
 
-// check if dirs contains subdirs
+/* check if dirs contains subdirs
 func hasSubDirs(dirs []fs.DirEntry) bool {
 	truth := false
 	for _, dir := range dirs {
@@ -60,46 +64,27 @@ func hasSubDirs(dirs []fs.DirEntry) bool {
 		}
 	}
 	return truth
-}
+}*/
 
-// helper for walkDirs
-func (d *Dir) walkDir(depth int) {
+// walk a dir
+func (d *Dir) walkDir() {
 	dirs, err := os.ReadDir(d.Path)
 	check(err)
-	if hasSubDirs(dirs) {
-		for _, dir := range dirs {
-			//prefix := strings.Repeat("  ", depth)
-			if (dir.IsDir()) && (dir.Name()[0] != '.') {
-				depth++
-				newD := Dir{Dirs: d.Dirs, Path: fmt.Sprintf("%s/%s", d.Path, dir.Name())}
-				newD.walkDir(depth)
-				d.Dirs = append(d.Dirs, newD)
-			} else if dir.Name()[0] != '.' {
-				d.Files = append(d.Files, dir)
-			}
-		}
-	}
-}
-
-// walk []fs.DirEntry, return Dirs
-func walkDirs(dirs []fs.DirEntry) Dirs {
-	var directories Dirs
 	for _, dir := range dirs {
-		var d *Dir
-		var dirDirs []Dir
-		var dirFiles []fs.DirEntry
-		if (dir.IsDir()) && (dir.Name()[0] != '.') {
-			d = &Dir{Dirs: dirDirs, Path: fmt.Sprintf("%s/%s", pathBase, dir.Name())}
-			d.walkDir(0)
-			dirDirs = append(dirDirs, *d)
+		//prefix := strings.Repeat("  ", depth)
+		if dir.IsDir() && dir.Name()[0] != '.' {
+			if dir.Name() != "node_modules" {
+				newD := &Dir{DirTree: d.DirTree, Path: fmt.Sprintf("%s/%s", d.Path, dir.Name())}
+				newD.walkDir()
+				d.DirTree = append(d.DirTree, newD)
+			}
 		} else if dir.Name()[0] != '.' {
-			dirFiles = append(dirFiles, dir)
+			d.FileTree = append(d.FileTree, &File{
+				Name: dir.Name(),
+				Path: fmt.Sprintf("%s/%s", d.Path, dir.Name()),
+			})
 		}
-		d.Dirs = dirDirs
-		d.Files = dirFiles
-		directories = append(directories, *d)
 	}
-	return directories
 }
 
 // search zets
@@ -112,14 +97,23 @@ func query(q []string) QueryResults {
 
 // generate index.html
 func generateIndex() {
-	f, err := os.Create(fmt.Sprintf("%s/index.html", pathBase))
-	check(err)
-	t := template.New("dirs.html")
+	/*f, err := os.Create(fmt.Sprintf("%s/index.html", pathBase))
+	check(err)*/
 	dirs, err := os.ReadDir(pathBase)
 	check(err)
-	directories := walkDirs(dirs)
+	var dt DirTree
+	for _, dir := range dirs {
+		var d *Dir
+		if dir.IsDir() && dir.Name()[0] != '.' {
+			d = &Dir{Path: fmt.Sprintf("%s/%s", pathBase, dir.Name())}
+			d.walkDir()
+		}
+		dt = append(dt, d)
+	}
+	fmt.Println(dt)
+	/*t := template.New("dirs.html")
 	t.Execute(f, directories)
-	err = f.Close()
+	err = f.Close()*/
 	check(err)
 }
 
