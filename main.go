@@ -3,11 +3,11 @@ package main
 import (
 	"errors"
 	"fmt"
+	"html/template"
 	"io/fs"
 	"log"
 	"os"
 	"os/exec"
-	"os/user"
 	"strings"
 	"time"
 )
@@ -16,9 +16,17 @@ var (
 	pathBase string
 )
 
+type Dirs []Dir
+
 type Dir struct {
-	dir     fs.DirEntry
-	relPath string
+	Dirs  []Dir
+	Files []fs.DirEntry
+	Path  string
+}
+
+type QueryResults struct {
+	Dirs  Dirs
+	Paths []string
 }
 
 // simple error check
@@ -38,29 +46,12 @@ func stdcmd(cmd *exec.Cmd) {
 
 // WIP: add windows/macos functionality
 func homeDir() string {
-	currentUser, err := user.Current()
+	homedir, err := os.UserHomeDir()
 	check(err)
-
-	return fmt.Sprintf("/home/%s", currentUser.Username)
+	return homedir
 }
 
-// generate style.css
-func generateStyle() {
-	f, err := os.Create(fmt.Sprintf("%s/style.css", pathBase))
-	check(err)
-	_, err = f.WriteString(`
-* {
-  margin: 0;
-  padding: 0;
-}
-
-#zet-reader {
-  display: flex;
-  justify-content: space-around;
-}
-`)
-}
-
+// check if dirs contains subdirs
 func hasSubDirs(dirs []fs.DirEntry) bool {
 	truth := false
 	for _, dir := range dirs {
@@ -71,60 +62,63 @@ func hasSubDirs(dirs []fs.DirEntry) bool {
 	return truth
 }
 
-func (d Dir) walkDir(depth int) {
-	dirs, err := os.ReadDir(d.relPath)
+// helper for walkDirs
+func (d *Dir) walkDir(depth int) {
+	dirs, err := os.ReadDir(d.Path)
 	check(err)
 	if hasSubDirs(dirs) {
 		for _, dir := range dirs {
 			//prefix := strings.Repeat("  ", depth)
 			if (dir.IsDir()) && (dir.Name()[0] != '.') {
 				depth++
-				d := Dir{dir: dir, relPath: fmt.Sprintf("%s/%s", d.relPath, dir.Name())}
-				fmt.Println(d)
-			} else {
-				//line = fmt.Sprintf("      %s<li><p id=\"%s\"><a href=\"#\">%s</a></p></li>", prefix, dir.Name(), dir.Name())
+				newD := Dir{Dirs: d.Dirs, Path: fmt.Sprintf("%s/%s", d.Path, dir.Name())}
+				newD.walkDir(depth)
+				d.Dirs = append(d.Dirs, newD)
+			} else if dir.Name()[0] != '.' {
+				d.Files = append(d.Files, dir)
 			}
 		}
 	}
 }
 
-func walkDirs(dirs []fs.DirEntry) {
+// walk []fs.DirEntry, return Dirs
+func walkDirs(dirs []fs.DirEntry) Dirs {
+	var directories Dirs
 	for _, dir := range dirs {
-		if (dir.IsDir() == true) && (dir.Name()[0] != '.') {
-			d := Dir{dir: dir, relPath: fmt.Sprintf("%s/%s", pathBase, dir.Name())}
+		var d *Dir
+		var dirDirs []Dir
+		var dirFiles []fs.DirEntry
+		if (dir.IsDir()) && (dir.Name()[0] != '.') {
+			d = &Dir{Dirs: dirDirs, Path: fmt.Sprintf("%s/%s", pathBase, dir.Name())}
 			d.walkDir(0)
+			dirDirs = append(dirDirs, *d)
+		} else if dir.Name()[0] != '.' {
+			dirFiles = append(dirFiles, dir)
 		}
+		d.Dirs = dirDirs
+		d.Files = dirFiles
+		directories = append(directories, *d)
 	}
+	return directories
+}
+
+// search zets
+func query(q []string) QueryResults {
+	//query := strings.Join(q, " ")
+	//dirs, err := os.ReadDir(pathBase)
+	var qr QueryResults
+	return qr
 }
 
 // generate index.html
 func generateIndex() {
 	f, err := os.Create(fmt.Sprintf("%s/index.html", pathBase))
 	check(err)
-	_, err = f.WriteString(`
-<!DOCTYPE html>
-<html>
-  <head>
-    <title>zettelkasten</title>
-    <script type="module" src="https://md-block.verou.me/md-block.js"></script>
-  </head>
-
-  <body>
-    <div id="zet-reader">
-`)
-	f.Sync()
+	t := template.New("dirs.html")
 	dirs, err := os.ReadDir(pathBase)
 	check(err)
-	lines := walkDirs(dirs)
-	for _, line := range lines {
-		fmt.Fprintln(f, line)
-	}
-	f.Sync()
-	_, err = f.WriteString(`
-    </div>
-  </body>
-</html>
-`)
+	directories := walkDirs(dirs)
+	t.Execute(f, directories)
 	err = f.Close()
 	check(err)
 }
@@ -165,6 +159,8 @@ func main() {
 			}
 		case "serve", "s":
 			generateIndex()
+		case "query", "q":
+			query(os.Args[2:])
 		}
 	}
 }

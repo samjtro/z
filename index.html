@@ -1,0 +1,17 @@
+{{define "dir"}}
+<li>{{.Path}}</li>
+  {{range .Dirs}}
+    <ul>
+      {{template "diritem" .}}
+    </ul>
+  {{end}}
+{{end}}
+
+{{range .}}
+  <ul>
+    {{range .Dirs}}
+      {{template "dirs" .Dirs}}
+    {{end}}
+  </ul>
+{{end}} 
+
