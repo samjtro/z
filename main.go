@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"html/template"
 	"log"
 	"os"
 	"os/exec"
@@ -28,10 +29,7 @@ type File struct {
 	Path string
 }
 
-type QueryResults struct {
-	Dirs  DirTree
-	Paths []string
-}
+type QueryResults []string
 
 // simple error check
 func check(err error) {
@@ -87,18 +85,28 @@ func (d *Dir) walkDir() {
 	}
 }
 
-// search zets
-func query(q []string) QueryResults {
-	//query := strings.Join(q, " ")
-	//dirs, err := os.ReadDir(pathBase)
-	var qr QueryResults
-	return qr
+// query a dir
+func (d *Dir) queryDir(q string) FileTree {
+	var ft FileTree
+	for _, x := range d.DirTree {
+		ft = append(ft, x.FileTree...)
+	}
+	return ft
 }
 
-// generate index.html
-func generateIndex() {
-	/*f, err := os.Create(fmt.Sprintf("%s/index.html", pathBase))
-	check(err)*/
+// query the zets dir
+func (d DirTree) query(q []string) FileTree {
+	query := strings.Join(q, " ")
+	var ft FileTree
+	for _, x := range d {
+		for _, y := range x.DirTree {
+			ft = append(ft, y.queryDir(query)...)
+		}
+	}
+	return ft
+}
+
+func walkZetDir() DirTree {
 	dirs, err := os.ReadDir(pathBase)
 	check(err)
 	var dt DirTree
@@ -110,11 +118,15 @@ func generateIndex() {
 		}
 		dt = append(dt, d)
 	}
-	fmt.Println(dt)
-	/*t := template.New("dirs.html")
-	t.Execute(f, directories)
-	err = f.Close()*/
+	return dt
+}
+
+// generate index.html
+func generateIndex() {
+	f, err := os.Create(fmt.Sprintf("%s/index.html", pathBase))
 	check(err)
+	template.New("tmpl.gohtml").Execute(f, walkZetDir())
+	check(f.Close())
 }
 
 func init() {
@@ -154,7 +166,8 @@ func main() {
 		case "serve", "s":
 			generateIndex()
 		case "query", "q":
-			query(os.Args[2:])
+			dt := walkZetDir()
+			dt.query(os.Args[2:])
 		}
 	}
 }
