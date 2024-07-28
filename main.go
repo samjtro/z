@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"html/template"
@@ -9,6 +10,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/lithammer/fuzzysearch/fuzzy"
 )
 
 var (
@@ -29,7 +32,12 @@ type File struct {
 	Path string
 }
 
-type QueryResults []string
+type QueryResults []QueryResult
+
+type QueryResult struct {
+	Path       string
+	Components []string
+}
 
 // simple error check
 func check(err error) {
@@ -86,7 +94,7 @@ func (d *Dir) walkDir() {
 }
 
 // query a dir
-func (d *Dir) queryDir(q string) FileTree {
+func (d *Dir) getFilesFromDir() FileTree {
 	var ft FileTree
 	for _, x := range d.DirTree {
 		ft = append(ft, x.FileTree...)
@@ -95,15 +103,40 @@ func (d *Dir) queryDir(q string) FileTree {
 }
 
 // query the zets dir
-func (d DirTree) query(q []string) FileTree {
+func (d DirTree) query(q []string) QueryResults {
 	query := strings.Join(q, " ")
 	var ft FileTree
+	var qr QueryResults
 	for _, x := range d {
 		for _, y := range x.DirTree {
-			ft = append(ft, y.queryDir(query)...)
+			ft = append(ft, y.getFilesFromDir()...)
 		}
 	}
-	return ft
+	for _, x := range ft {
+		t := false
+		// credit: https://www.scaler.com/topics/golang/golang-read-file-line-by-line/
+		readFile, err := os.Open(x.Path)
+		check(err)
+		fileScanner := bufio.NewScanner(readFile)
+		fileScanner.Split(bufio.ScanLines)
+		var fileLines []string
+		for fileScanner.Scan() {
+			fileLines = append(fileLines, fileScanner.Text())
+		}
+		readFile.Close()
+		for _, y := range fileLines {
+			if fuzzy.Match(query, y) {
+				t = true
+			}
+		}
+		if t {
+			qr = append(qr, QueryResult{
+				Path:       x.Path,
+				Components: fuzzy.Find(query, fileLines),
+			})
+		}
+	}
+	return qr
 }
 
 func walkZetDir() DirTree {
@@ -167,7 +200,7 @@ func main() {
 			generateIndex()
 		case "query", "q":
 			dt := walkZetDir()
-			dt.query(os.Args[2:])
+			fmt.Println(dt.query(os.Args[2:]))
 		}
 	}
 }
