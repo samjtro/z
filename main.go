@@ -10,16 +10,14 @@ import (
 	"os/exec"
 	"strings"
 	"time"
-
-	"github.com/lithammer/fuzzysearch/fuzzy"
 )
 
 var (
 	pathBase string
 )
 
-type DirTree []*Dir
-type FileTree []*File
+type DirTree []Dir
+type FileTree []File
 
 type Dir struct {
 	DirTree  DirTree
@@ -35,8 +33,8 @@ type File struct {
 type QueryResults []QueryResult
 
 type QueryResult struct {
-	Path       string
-	Components []string
+	Path  string
+	Lines []string
 }
 
 // simple error check
@@ -73,28 +71,29 @@ func hasSubDirs(dirs []fs.DirEntry) bool {
 }*/
 
 // walk a dir
-func (d *Dir) walkDir() {
+func walkDir(d Dir) Dir {
 	dirs, err := os.ReadDir(d.Path)
 	check(err)
 	for _, dir := range dirs {
 		//prefix := strings.Repeat("  ", depth)
 		if dir.IsDir() && dir.Name()[0] != '.' {
 			if dir.Name() != "node_modules" {
-				newD := &Dir{DirTree: d.DirTree, Path: fmt.Sprintf("%s/%s", d.Path, dir.Name())}
-				newD.walkDir()
+				newD := Dir{DirTree: d.DirTree, Path: fmt.Sprintf("%s/%s", d.Path, dir.Name())}
+				newD = walkDir(newD)
 				d.DirTree = append(d.DirTree, newD)
 			}
 		} else if dir.Name()[0] != '.' {
-			d.FileTree = append(d.FileTree, &File{
+			d.FileTree = append(d.FileTree, File{
 				Name: dir.Name(),
 				Path: fmt.Sprintf("%s/%s", d.Path, dir.Name()),
 			})
 		}
 	}
+	return d
 }
 
-// query a dir
-func (d *Dir) getFilesFromDir() FileTree {
+// get files from dir
+func getFilesFromDir(d Dir) FileTree {
 	var ft FileTree
 	for _, x := range d.DirTree {
 		ft = append(ft, x.FileTree...)
@@ -102,14 +101,14 @@ func (d *Dir) getFilesFromDir() FileTree {
 	return ft
 }
 
-// query the zets dir
+// query a DirTree
 func (d DirTree) query(q []string) QueryResults {
 	query := strings.Join(q, " ")
 	var ft FileTree
 	var qr QueryResults
 	for _, x := range d {
 		for _, y := range x.DirTree {
-			ft = append(ft, y.getFilesFromDir()...)
+			ft = append(ft, getFilesFromDir(y)...)
 		}
 	}
 	for _, x := range ft {
@@ -124,15 +123,18 @@ func (d DirTree) query(q []string) QueryResults {
 			fileLines = append(fileLines, fileScanner.Text())
 		}
 		readFile.Close()
+		var lines []string
 		for _, y := range fileLines {
-			if fuzzy.Match(query, y) {
+			fmt.Println(y)
+			if strings.Contains(y, query) {
 				t = true
+				lines = append(lines, y)
 			}
 		}
 		if t {
 			qr = append(qr, QueryResult{
-				Path:       x.Path,
-				Components: fuzzy.Find(query, fileLines),
+				Path:  x.Path,
+				Lines: lines,
 			})
 		}
 	}
@@ -144,10 +146,10 @@ func walkZetDir() DirTree {
 	check(err)
 	var dt DirTree
 	for _, dir := range dirs {
-		var d *Dir
+		var d Dir
 		if dir.IsDir() && dir.Name()[0] != '.' {
-			d = &Dir{Path: fmt.Sprintf("%s/%s", pathBase, dir.Name())}
-			d.walkDir()
+			d = Dir{Path: fmt.Sprintf("%s/%s", pathBase, dir.Name())}
+			d = walkDir(d)
 		}
 		dt = append(dt, d)
 	}
@@ -158,7 +160,35 @@ func walkZetDir() DirTree {
 func generateIndex() {
 	f, err := os.Create(fmt.Sprintf("%s/index.html", pathBase))
 	check(err)
-	template.New("tmpl.gohtml").Execute(f, walkZetDir())
+	t, err := template.New("index").Parse(`
+{{define "DirTree"}}
+<ul>
+<li>{{.Path}}</li>
+  <ul>
+  {{range .DirTree}}
+    {{template "DirTree" .}}
+  {{end}}
+  {{range .FileTree}}
+    {{template "FileTree" .}}
+  {{end}}
+  </ul>
+</ul>
+{{end}}
+{{define "FileTree"}}
+<li><a href={{.Path}}>{{.Name}}</a></li>
+{{end}}
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>zettelkasten</title>
+  </head>
+  <body>
+    {{template "DirTree" .}}
+  </body>
+</html>`)
+	check(err)
+	check(t.ExecuteTemplate(f, "index", walkZetDir()))
 	check(f.Close())
 }
 
